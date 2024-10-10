@@ -1,0 +1,30 @@
+{
+  "lact_24": {
+    "concepts": ["lact"],
+    "description": "Worst lactate in 24 hours",
+    "callback": "lact_dayone",
+    "class": "rec_cncpt",
+    "target": "id_tbl"
+  },
+  "ast_24": {
+    "concepts": ["ast"],
+    "description": "Worst AST in 24 hours",
+    "callback": "ast_dayone",
+    "class": "rec_cncpt",
+    "target": "id_tbl"
+  },
+  "safi_24": {
+    "concepts": ["safi"],
+    "description": "Worst SaO2/FiO2 in 24 hours",
+    "callback": "safi_dayone",
+    "class": "rec_cncpt",
+    "target": "id_tbl"
+  },
+  "pafi_24": {
+    "concepts": ["pafi"],
+    "description": "Worst PaO2/FiO2 in 24 hours",
+    "callback": "pafi_dayone",
+    "class": "rec_cncpt",
+    "target": "id_tbl"
+  }
+}
