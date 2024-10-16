@@ -15,14 +15,10 @@ test_gt <- function(sclass) {
     po_111 <- compute_PO(sclass, 1, 1, 1)
     
     tese <- (po_011 - po_000) - (po_111 - po_100)
-    
     deie0 <- (po_001 - po_000) - (po_011 - po_010)
     deie1 <- (po_101 - po_100) - (po_111 - po_110)
-    
     dese <- (po_001 - po_000) - (po_101 - po_100)
-    
     iese <- (po_010 - po_000) - (po_110 - po_100)
-    
     deiese <- deie0 - deie1
     
     res <- rbind(

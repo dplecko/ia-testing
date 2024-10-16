@@ -6,6 +6,7 @@ set.seed(2024)
 scm_class <- LETTERS[1:5]
 nrep <- 100
 res <- c()
+old <- FALSE
 for (sclass in scm_class) {
   
   # for (sample_size in c(500, 750)) {
@@ -21,22 +22,34 @@ for (sclass in scm_class) {
         c(data, SFM, gt) %<-% gen_from_scm(sclass, n = sample_size)
         c(X, Z, W, Y) %<-% SFM
         
-        ret <- c()
-        for (method in c("MTG")) {
+        if (old) {
           
-          model <- if (method == "medDML") "ranger" else "logistic"
-          ia_iter <- ia_vals(data, X = X, Z = Z, W = W, Y = Y, x0 = 0, x1 = 1, 
-                             method = method, model = model,
-                             ret = "values")
+          ret <- c()
+          for (method in c("MTG")) {
+            
+            model <- if (method == "medDML") "ranger" else "logistic"
+            ia_iter <- ia_vals(data, X = X, Z = Z, W = W, Y = Y, x0 = 0, x1 = 1, 
+                               method = method, model = model,
+                               ret = "values")
+            ia_iter <- merge(ia_iter, gt, by = "ia") # merge-in ground truth
+            ia_iter[, scm_class := sclass]
+            ia_iter[, method := method]
+            ia_iter[, sample_size := sample_size]
+            ia_iter[, rep := rep]
+            ret <- rbind(ret, ia_iter)
+          }
+          return(ret)
+        } else {
+          
+          ia_iter <- ia_tests(data, X, Z, W, Y, nested_mean = "refit")
           ia_iter <- merge(ia_iter, gt, by = "ia") # merge-in ground truth
           ia_iter[, scm_class := sclass]
-          ia_iter[, method := method]
+          ia_iter[, method := "one-step"]
           ia_iter[, sample_size := sample_size]
           ia_iter[, rep := rep]
-          ret <- rbind(ret, ia_iter)
+          return(ia_iter)
         }
-        return(ret)
-      }, mc.cores = 64 # parallel::detectCores() / 2
+      }, mc.cores = parallel::detectCores() / 2
     )
     res <- rbind(res, do.call(rbind, ia_chunk))
   }
@@ -44,13 +57,13 @@ for (sclass in scm_class) {
 
 # analyze and plot
 res <- as.data.table(res)
-save(res, file = file.path("results", "ia-synthetic-stats-glm.RData"))
-# load(file.path("results", "ia-synthetic-stats.RData"))
+save(res, file = file.path("results", "ia-synthetic-stats-one-step.RData"))
+# load(file.path("results", "ia-synthetic-stats-one-step.RData"))
 
-#' * bias correctio n / symmetry inspection * 
+#' * bias correction / symmetry inspection * 
 ggplot(
-  res[gt == FALSE & method == "MTG" & inner_boot == 1 & outer_boot == 1][,
-      mean(value > 0), by = c("scm_class", "method", "ia", "sample_size")],
+  res[gt == FALSE & method == "one-step"][,
+      mean(psi_osd > 0), by = c("scm_class", "method", "ia", "sample_size")],
   aes(x = V1)
 ) +
   geom_histogram() + theme_bw() +
@@ -79,43 +92,69 @@ ggplot(
 # 
 
 #' * confidence interval validity *
-ret <- ci_validity(res[method == "MTG"], alpha = 0.05, bootstrap = "bc")
+# ret <- ci_validity(res[method == "MTG"], alpha = 0.05, bootstrap = "bc")
+res <- res[, cov := lwr < 0 & upr > 0]
 
 ggplot(
-  ret[, list(cov = mean(cov)), by = c("scm_class", "ia", "sample_size", "method")],
+  res[gt == FALSE, list(cov = mean(cov)), 
+      by = c("scm_class", "ia", "sample_size", "method")],
   aes(x = cov)
 ) +
   geom_histogram() + theme_bw() +
   facet_grid(rows = vars(sample_size))
 
 
-# res[, ia_ind := ifelse(gt, "IA", "No IA")]
-# 
-# # analysis I:
-# ggplot(res[method == "MTG"], aes(x = pval, color = factor(scm_class), 
-#                                     linetype = factor(method),
-#                 linewidth = sqrt(sample_size), 
-#                 group = interaction(scm_class, method, sample_size))) +
-#   stat_ecdf() + theme_bw() +
-#   facet_grid(rows = vars(ia_ind), cols = vars(ia)) +
-#   geom_abline(slope = 1, intercept = 0, color = "gray", linetype = "dashed") +
-#   scale_linetype_manual(values = c("solid", "dotted")) +
-#   scale_linewidth_continuous(range = c(0.3, 3))
-# 
-# 
-# # analysis II:
-# alpha <- 0.05
-# res[, h0_true := !gt]
-# res[, reject := pval < alpha / 2]
-# res[h0_true == TRUE, err := (reject == 1)]
-# res[h0_true == FALSE, err := (reject == 0)]
-# 
-# # Type I error
-# type_err <- res[, list(err = mean(err), h0_true = h0_true), 
-#                 by = c("method", "scm_class", "sample_size", "ia")]
-# type_err[, type := ifelse(h0_true == TRUE, "Type I", "Type II")]
-# ggplot(type_err[method == "MTG"], 
-#        aes(y = err, x = sample_size, color = scm_class, linetype = method)) +
-#   geom_line() + theme_bw() +
-#   facet_grid(rows = vars(type), cols = vars(ia)) +
-#   xlab("Sample size") + ylab("Type I / Type II Error")
+# analysis I:
+res[, pval := 2 * pnorm(-abs(psi_osd / dev))]
+res[, ia_ind := ifelse(gt, "Interaction", "No Interaction")]
+res[, ia_ind := factor(ia_ind, levels = c("No Interaction", "Interaction"))]
+ggplot(res, aes(x = pval, color = factor(scm_class),
+                linewidth = sqrt(sample_size),
+                group = interaction(scm_class, sample_size))) +
+  stat_ecdf() + theme_bw() +
+  facet_grid(rows = vars(ia_ind), cols = vars(ia)) +
+  geom_abline(slope = 1, intercept = 0, color = "gray", linetype = "dashed") +
+  scale_linetype_manual(values = c("solid", "dotted")) +
+  scale_linewidth_continuous(range = c(0.3, 3),
+                             name = latex2exp::TeX("\\sqrt{sample size}")) +
+  scale_color_discrete(
+    name = "SCM", labels = sapply(1:5, function(i) tex(paste0("$M_", i, "$")))
+  ) +
+  ylab("Empirical Cumulative Distribution Function") +
+  xlab("p-value") +
+  theme(
+    legend.text = element_text(size = 12),
+    axis.title = element_text(size = 12)
+  )
+
+ggsave("results/p-value-distr.png", width = 10, height = 5)
+
+# analysis II:
+alpha <- 0.05
+res[, h0_true := !gt]
+res[, reject := pval < alpha / 2]
+res[h0_true == TRUE, err := (reject == 1)]
+res[h0_true == FALSE, err := (reject == 0)]
+
+type_err <- res[, list(err = mean(err), h0_true = h0_true),
+                by = c("scm_class", "sample_size", "ia")]
+type_err[, type := ifelse(h0_true == TRUE, "Type II", "Type I")]
+type_err[, type := factor(type, levels = c("Type II", "Type I"))]
+ggplot(type_err,
+       aes(y = err, x = sample_size, color = scm_class)) +
+  geom_line() + theme_bw() +
+  facet_grid(rows = vars(type), cols = vars(ia),
+             scales = "free") +
+  xlab("Sample size") + ylab("Testing Error") +
+  scale_y_continuous(labels = scales::percent) +
+  geom_hline(data = subset(type_err, type == "Type II"), 
+             aes(yintercept = 0.05), linetype = "dashed", color = "gray") +
+  scale_color_discrete(
+    name = "SCM", labels = sapply(1:5, function(i) tex(paste0("$M_", i, "$")))
+  ) +
+  theme(
+    legend.text = element_text(size = 12),
+    axis.title = element_text(size = 12)
+  )
+
+ggsave("results/test-errors.png", width = 10, height = 5)
