@@ -184,10 +184,10 @@ load_adult <- function() {
   
   root <- rprojroot::find_root(rprojroot::has_file(".gitignore"))
   
-  adult1 <- readr::read_csv(file.path(root, "data", "adult.data"),
+  adult1 <- readr::read_csv(file.path(root, "data", "adult_data.csv"),
                             col_names = FALSE)
   
-  adult2 <- readr::read_csv(file.path(root, "data", "adult.test"),
+  adult2 <- readr::read_csv(file.path(root, "data", "adult_test.csv"),
                             col_names = FALSE)
   
   adult <- rbind(adult1, adult2)
