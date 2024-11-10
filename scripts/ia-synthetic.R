@@ -4,12 +4,13 @@ ricu:::init_proj()
 set.seed(2024)
 
 scm_class <- LETTERS[1:5]
+sample_grid <- c(500, 750, 1500, 3000, 5000, 8000)[1:6]
 nrep <- 100
 res <- c()
+ias <- c("TE x SE", "DE x IE", "DE x SE", "IE x SE", "DE x IE x SE")
 for (sclass in scm_class) {
   
-  # for (sample_size in c(500, 750)) {
-  for (sample_size in c(500, 750, 1500, 3000, 5000, 8000)) {
+  for (sample_size in sample_grid) {
     
     cat("Class:", sclass, ", n = ", sample_size, "parallelized...\n")
     
@@ -18,11 +19,13 @@ for (sclass in scm_class) {
       seq_len(nrep),
       function(rep) {
         
-        c(data, SFM, gt) %<-% gen_from_scm(sclass, n = sample_size)
+        c(data, SFM, gt, prob_y) %<-% gen_from_scm(sclass, n = sample_size)
         c(X, Z, W, Y) %<-% SFM
         
-        ia_iter <- ia_tests(data, X, Z, W, Y, nested_mean = "refit")
-        ia_iter <- merge(ia_iter, gt, by = "ia") # merge-in ground truth
+        ia_iter <- one_step_debias(data, X, Z, W, Y, log_risk = TRUE)
+        ia_iter <- as.data.table(ia_iter)
+        ia_iter <- ia_iter[measure %in% ias]
+        ia_iter <- merge(ia_iter, gt, by = "measure") # merge-in ground truth
         ia_iter[, scm_class := sclass]
         ia_iter[, method := "one-step"]
         ia_iter[, sample_size := sample_size]
@@ -37,6 +40,27 @@ for (sclass in scm_class) {
 res <- as.data.table(res)
 # save(res, file = file.path("results", "ia-synthetic-stats-one-step.RData"))
 # load(file.path("results", "ia-synthetic-stats-one-step.RData"))
+
+add_gt <- FALSE
+if (add_gt) {
+  
+  gt_meas <- NULL
+  for (sclass in unique(res$scm_class)) 
+    gt_meas <- rbind(gt_meas, ia_gt(sclass, log_risk = TRUE))
+  
+  res <- merge(res, gt_meas, by = c("measure", "scm_class", "scale"))
+  
+  res[, cov := (gt_value < value + 1.96 * sd) & (gt_value > value - 1.96 * sd)]
+  
+  ggplot(
+    res[, list(cov = mean(cov)), 
+        by = c("measure", "scm_class", "scale", "sample_size")],
+    aes(x = cov, fill = factor(sample_size))
+  ) +
+    geom_density(alpha = 0.6) + theme_bw() + 
+    facet_wrap(~ measure) +
+    xlab("Coverage") + ylab("Probability Density")
+}
 
 #' * symmetry *
 ggplot(
@@ -60,6 +84,8 @@ ggplot(
 
 #' * Analysis I: distribution of p-values * 
 res[, pval := 2 * pnorm(-abs(psi_osd / dev))]
+res[, ia := factor(ia, levels = c("TE x SE", "DE x IE", "DE x SE", "IE x SE", 
+                                  "DE x IE x SE"))]
 res[, ia_ind := ifelse(gt, "Interaction", "No Interaction")]
 res[, ia_ind := factor(ia_ind, levels = c("No Interaction", "Interaction"))]
 ggplot(res, aes(x = pval, color = factor(scm_class),
