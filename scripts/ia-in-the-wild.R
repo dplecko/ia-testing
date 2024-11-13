@@ -42,7 +42,7 @@ ia_inspect <- function(dataset) {
 
 ia_itw_latex <- function(itw) {
   
-  ltx_row <- function(p, dataset) {
+  ltx_row <- function(p, n, dataset) {
     
     ds_names <- list(
       compas = "COMPAS",
@@ -57,14 +57,15 @@ ia_itw_latex <- function(itw) {
       diabetes = "BRFSS Diabetes"
     )
     
-    paste(c(ds_names[[dataset]], ifelse(p < 0.05, "\\textbullet", "")), 
+    paste(c(ds_names[[dataset]], paste0(n), ifelse(p < 0.05, "\\textbullet", "")), 
           collapse = " & ")
   }
   
   for (dts in unique(itw$dataset)) {
 
     pvals <- itw[dataset == dts][, max(pval), by = c("measure", "dataset")]$V1
-    cat(ltx_row(pvals, dts), " \\\\ \\hline \n")
+    n_samp <- nrow(load_data(dts)$data)
+    cat(ltx_row(pvals, n_samp, dts), " \\\\ \\hline \n")
   }
 }
 
